@@ -28,9 +28,10 @@ def calculate_input(text):
     except:
         return 0
 
+# Өнгөний логик: Хасах (Дутсан) бол УЛААН, Нэмэх (Илүүдсэн) бол НОГООН
 def style_diff(v):
-    if v < 0: return 'background-color: #ffcccc; color: black' # Улаан
-    if v > 0: return 'background-color: #ccffcc; color: black' # Ногоон
+    if v < 0: return 'background-color: #ffcccc; color: black'
+    if v > 0: return 'background-color: #ccffcc; color: black'
     return ''
 
 st.set_page_config(page_title="Caffe Bene Inventory Pro", layout="wide")
@@ -56,7 +57,7 @@ with tab1:
         date_obj = st.date_input("Огноо сонгох:", datetime.now())
         date_str = date_obj.strftime("%Y-%m-%d")
     with col_file:
-        excel_file = st.file_uploader("📂 (Оройн тулгалтанд) Системийн Excel-ээ оруулна уу", type=['xlsx'])
+        excel_file = st.file_uploader("📂 Системийн Excel-ээ оруулна уу", type=['xlsx'])
 
     saved_current = load_json(CURRENT_FILE)
 
@@ -71,6 +72,7 @@ with tab1:
         r_col = st.columns([2, 0.7, 0.7, 0.7, 2.5])
         r_col[0].info(item)
         
+        # Автоматаар бөглөхөөс сэргийлж key-д date_str ашиглав
         u = r_col[1].text_input("Ө", value=prev['u'], key=f"u_{item}_{date_str}", label_visibility="collapsed")
         h = r_col[2].text_input("Х", value=prev['h'], key=f"h_{item}_{date_str}", label_visibility="collapsed")
         o = r_col[3].text_input("О", value=prev['o'], key=f"o_{item}_{date_str}", label_visibility="collapsed")
@@ -103,10 +105,21 @@ with tab1:
                             match, score = process.extractOne(name, excel_names)
                             sys_v = df[df['Item Name'] == match]['Qty Sold'].values[0] if score > 70 else 0
                             if np.isnan(sys_v): sys_v = 0
+                            
                             act_sold = (u_v + h_v) - o_v
+                            
+                            # ЛОГИК: Зөрүү = Бодит - Систем
+                            # Ингэснээр: Бодит < Систем бол хасах (-) буюу Дутсан
+                            # Бодит > Систем бол нэмэх (+) буюу Илүүдсэн
+                            final_diff = int(act_sold - sys_v)
+                            
                             report_list.append({
-                                "Бараа": name, "Бодит": int(act_sold), "Систем": int(sys_v), 
-                                "Зөрүү": int(act_sold - sys_v), "Тайлбар": v['comm'], "Огноо": date_str
+                                "Бараа": name, 
+                                "Бодит": int(act_sold), 
+                                "Систем": int(sys_v), 
+                                "Зөрүү": final_diff, 
+                                "Тайлбар": v['comm'], 
+                                "Огноо": date_str
                             })
                     st.session_state['temp_report'] = report_list
                 except Exception as e:
@@ -154,7 +167,7 @@ with tab2:
         only_diff = st.checkbox("Зөвхөн зөрүүтэйг харах", value=True)
         display_df = month_df[month_df['Зөрүү'] != 0] if only_diff else month_df
         
-        st.dataframe(display_df.sort_values(by='Огноо', ascending=False).style.format(precision=0), use_container_width=True)
+        st.dataframe(display_df.sort_values(by='Огноо', ascending=False).style.applymap(style_diff, subset=['Зөрүү']).format(precision=0), use_container_width=True)
         
         st.write("---")
         st.write("### Бараа тус бүрийн сарын нийт зөрүү")
@@ -162,7 +175,6 @@ with tab2:
         summary_filtered = summary[summary['Зөрүү'] != 0]
         
         if not summary_filtered.empty:
-            # Энд background_gradient-ийн оронд applymap ашиглалаа (Matplotlib хэрэггүй)
             st.dataframe(summary_filtered.style.applymap(style_diff, subset=['Зөрүү']).format(precision=0), use_container_width=True)
         
         buffer = io.BytesIO()
