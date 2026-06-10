@@ -20,10 +20,8 @@ def save_json(data, filename):
 
 def clean_numeric(val):
     try:
-        # Хэрвээ давхардсан утга (Series) орж ирвэл зөвхөн эхнийхийг нь авна
         if isinstance(val, pd.Series):
             val = val.iloc[0]
-            
         if pd.isna(val) or val == "":
             return 0
         return int(float(str(val).replace(',', '').replace(' ', '')))
@@ -34,6 +32,14 @@ def style_diff(val):
     if val < 0: return 'background-color: #ffcccc; color: black'
     if val > 0: return 'background-color: #ccffcc; color: black'
     return ''
+
+# Pandas-ийн шинэ хуучин хувилбарын алдаанаас хамгаалах функц
+def safe_style(df, subset_cols):
+    styler = df.style
+    if hasattr(styler, 'map'):
+        return styler.map(style_diff, subset=subset_cols)
+    else:
+        return styler.applymap(style_diff, subset=subset_cols)
 
 st.set_page_config(page_title="Bene Inventory Pro", layout="wide")
 st.markdown("""<style>.stButton>button { width: 100%; height: 3em; border-radius: 10px; font-weight: bold; margin-top: 10px; }</style>""", unsafe_allow_html=True)
@@ -77,13 +83,10 @@ with tab1:
             st.error("⚠️ ПОС-ын болон Тооллогын 2 файлыг ХОЁУЛАГ НЬ оруулна уу!")
         else:
             try:
-                # Файлыг санах ойд тогтвортойгоор уншиж авах
                 pos_bytes = pos_excel.getvalue()
                 tool_bytes = toollogo_excel.getvalue()
 
-                # ---------------------------------------------------------
                 # 1. ПОС-ЫН ФАЙЛЫГ УНШИХ
-                # ---------------------------------------------------------
                 if pos_excel.name.endswith('.csv'):
                     df_pos_raw = pd.read_csv(io.BytesIO(pos_bytes), header=None)
                 else:
@@ -102,18 +105,14 @@ with tab1:
                     df_pos = pd.read_excel(io.BytesIO(pos_bytes), skiprows=h_idx_pos)
                 
                 df_pos.columns = df_pos.columns.str.strip()
-                # Давхардсан багануудыг цэвэрлэх
                 df_pos = df_pos.loc[:, ~df_pos.columns.duplicated()]
                 
                 df_pos['Item #'] = df_pos['Item #'].astype(str).str.replace(r'\.0$', '', regex=True)
                 df_pos['Qty Sold'] = pd.to_numeric(df_pos['Qty Sold'], errors='coerce').fillna(0)
                 sys_sales = df_pos.groupby('Item #')['Qty Sold'].sum().to_dict()
 
-                # ---------------------------------------------------------
                 # 2. ТООЛЛОГЫН ФАЙЛЫГ УНШИХ
-                # ---------------------------------------------------------
                 df_tool = None
-                
                 if toollogo_excel.name.endswith('.csv'):
                     df_tool_raw = pd.read_csv(io.BytesIO(tool_bytes), header=None)
                     for i, row in df_tool_raw.iterrows():
@@ -138,8 +137,6 @@ with tab1:
                     st.stop()
                     
                 df_tool.columns = df_tool.columns.astype(str).str.strip().str.lower()
-                
-                # --- ХАМГИЙН ЧУХАЛ ЗАСВАР: ДАВХАРДСАН БАГАНУУДЫГ УСТГАХ ---
                 df_tool = df_tool.loc[:, ~df_tool.columns.duplicated()]
                 
                 cols = df_tool.columns.tolist()
@@ -167,12 +164,9 @@ with tab1:
 
                 df_tool = df_tool.dropna(subset=[c_code, c_name])
 
-                # ---------------------------------------------------------
                 # 3. ТУЛГАЛТ ХИЙХ
-                # ---------------------------------------------------------
                 report_list = []
                 for _, row in df_tool.iterrows():
-                    # Давхардсан утгатай бол сэргийлэх нэмэлт
                     raw_code = row[c_code]
                     raw_name = row[c_name]
                     if isinstance(raw_code, pd.Series): raw_code = raw_code.iloc[0]
@@ -222,7 +216,10 @@ with tab1:
         st.divider()
         st.subheader(f"🔍 ТУЛГАЛТЫН ДҮН ({date_str})")
         res_df = pd.DataFrame(st.session_state['temp_report'])
-        st.dataframe(res_df.style.applymap(style_diff, subset=['Зөрүү (Илүү/Дутуу)']).format(precision=0), use_container_width=True)
+        
+        # Зассан хэсэг: аюулгүй өнгө будах функц ашиглав
+        styled_df = safe_style(res_df, subset_cols=['Зөрүү (Илүү/Дутуу)']).format(precision=0)
+        st.dataframe(styled_df, use_container_width=True)
         
         if st.button("🏁 ЭНЭ ӨДРИЙГ АРХИВТ ХАДГАЛАХ", type="primary"):
             history[date_str] = st.session_state['temp_report']
@@ -258,7 +255,10 @@ with tab2:
             df_all = df_all[["Огноо", "ПОС Ажилтан", "Код", "Барааны нэр", "Өглөө", "Хүргэлт", "Орой", "Бодит борлуулалт", "Систем борлуулалт", "Зөрүү (Илүү/Дутуу)", "Тайлбар"]]
             
             st.write(f"### 📅 {start_str} -аас {end_str} хүртэлх тайлан")
-            st.dataframe(df_all.style.applymap(style_diff, subset=['Зөрүү (Илүү/Дутуу)']).format(precision=0), use_container_width=True)
+            
+            # Зассан хэсэг: аюулгүй өнгө будах функц ашиглав
+            styled_all_df = safe_style(df_all, subset_cols=['Зөрүү (Илүү/Дутуу)']).format(precision=0)
+            st.dataframe(styled_all_df, use_container_width=True)
             
             # --- СУУТГАЛЫН НЭГТГЭЛ ---
             st.divider()
