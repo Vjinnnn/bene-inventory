@@ -56,7 +56,6 @@ with tab1:
 
     st.write("---")
     
-    # 3-р дүрэм: Өмнөх өдрийн оройны үлдэгдлийг олж бэлдэх
     past_dates = [d for d in history.keys() if d < date_str]
     latest_date = max(past_dates) if past_dates else None
     prev_evening_dict = {}
@@ -83,10 +82,10 @@ with tab1:
                 else:
                     df_pos_raw = pd.read_excel(pos_excel, header=None)
                 
-                # 'Item #' гэсэн толгойг олох
                 h_idx_pos = 0
                 for i, row in df_pos_raw.iterrows():
-                    if 'Item #' in str(row.values) or 'Item Name' in str(row.values):
+                    row_text = " ".join([str(x) for x in row.values if pd.notna(x)])
+                    if 'Item #' in row_text or 'Item Name' in row_text:
                         h_idx_pos = i
                         break
                 
@@ -108,10 +107,11 @@ with tab1:
                 else:
                     df_tool_raw = pd.read_excel(toollogo_excel, header=None)
                 
-                # 'Бүтээгдэхүүний нэр' эсвэл 'Өглөө' гэсэн толгойг олох
+                # Толгой мөрийг илүү ухаалгаар олох
                 h_idx_tool = 0
                 for i, row in df_tool_raw.iterrows():
-                    if 'Бүтээгдэхүүний нэр' in str(row.values) or 'Өглөө' in str(row.values):
+                    row_text = " ".join([str(x) for x in row.values if pd.notna(x)])
+                    if 'Бүтээгдэхүүн' in row_text or 'Өглөө' in row_text or 'Орой' in row_text:
                         h_idx_tool = i
                         break
                 
@@ -122,16 +122,24 @@ with tab1:
                     
                 df_tool.columns = df_tool.columns.astype(str).str.strip()
                 
-                # Баганын нэрсийг таньж авах
-                c_code = [c for c in df_tool.columns if '№' in c or 'Код' in c][0]
-                c_name = [c for c in df_tool.columns if 'Бүтээгдэхүүний нэр' in c or 'нэр' in c.lower()][0]
-                c_morn = [c for c in df_tool.columns if 'Өглөө' in c][0]
-                c_delv = [c for c in df_tool.columns if 'Хүргэлт' in c][0]
-                c_even = [c for c in df_tool.columns if 'Орой' in c][0]
-                c_comm = [c for c in df_tool.columns if 'Тайлбар' in c]
-                c_comm = c_comm[0] if c_comm else None
+                # Багануудыг аюулгүй байдлаар хайж олох (Алдаа зааж унахгүй)
+                try:
+                    c_code = [c for c in df_tool.columns if '№' in c or 'Код' in c][0]
+                    c_name = [c for c in df_tool.columns if 'Бүтээгдэхүүн' in c or 'нэр' in c.lower()][0]
+                    c_morn = [c for c in df_tool.columns if 'Өглөө' in c][0]
+                    
+                    c_delv_list = [c for c in df_tool.columns if 'Хүргэлт' in c]
+                    c_delv = c_delv_list[0] if c_delv_list else None
+                    
+                    c_even_list = [c for c in df_tool.columns if 'Орой' in c]
+                    c_even = c_even_list[0] if c_even_list else None
+                    
+                    c_comm_list = [c for c in df_tool.columns if 'Тайлбар' in c]
+                    c_comm = c_comm_list[0] if c_comm_list else None
+                except IndexError:
+                    st.error("⚠️ Тооллогын файлаас '№', 'Бүтээгдэхүүний нэр', эсвэл 'Өглөө' багануудын нэгийг олж чадсангүй. Файлын загвараа шалгана уу.")
+                    st.stop()
 
-                # Хоосон мөрүүдийг устгах
                 df_tool = df_tool.dropna(subset=[c_code, c_name])
 
                 # ---------------------------------------------------------
@@ -142,20 +150,17 @@ with tab1:
                     code = str(row[c_code]).replace('.0', '').strip()
                     name = str(row[c_name]).strip()
                     
-                    if not code or code == 'nan':
+                    if not code or code == 'nan' or name == 'nan':
                         continue
                         
-                    # Хүснэгтээс уншсан тоо
                     morn_val = clean_numeric(row[c_morn])
-                    delv_val = clean_numeric(row[c_delv])
-                    even_val = clean_numeric(row[c_even])
+                    delv_val = clean_numeric(row[c_delv]) if c_delv else 0
+                    even_val = clean_numeric(row[c_even]) if c_even else 0
                     comment_val = str(row[c_comm]) if c_comm and not pd.isna(row[c_comm]) else ""
 
-                    # ЗАРЧИМ: Өчигдрийн орой = Өнөөдрийн өглөө (Хэрэв архивт байвал автоматаар дарж бичнэ)
                     if latest_date and code in prev_evening_dict:
                         morn_val = prev_evening_dict[code]
 
-                    # Систем борлуулалт ба Бодит борлуулалт
                     sys_v = sys_sales.get(code, 0)
                     act_sold = (morn_val + delv_val) - even_val
                     diff = act_sold - sys_v
@@ -177,7 +182,7 @@ with tab1:
                 st.success("✅ Амжилттай тулгалаа! Доошоо гүйлгэж харна уу.")
                 
             except Exception as e:
-                st.error(f"Файл уншихад алдаа гарлаа. Файлын загвараа шалгана уу! Алдаа: {e}")
+                st.error(f"Файл уншихад алдаа гарлаа: {e}")
 
     if 'temp_report' in st.session_state:
         st.divider()
@@ -234,7 +239,6 @@ with tab2:
             else:
                 st.info("🥳 Энэ хугацаанд ямар ч бараа дутаагүй байна!")
             
-            # EXCEL ТАТАХ
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 df_all.to_excel(writer, sheet_name="Өдрийн дэлгэрэнгүй", index=False)
@@ -243,7 +247,6 @@ with tab2:
                     
             st.download_button("📥 EXCEL ТАЙЛАН ТАТАХ", buffer.getvalue(), f"Tailan_{start_str}_{end_str}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             
-            # Устгах хэсэг
             st.write("---")
             with st.expander("🗑️ Хуучин архив устгах"):
                 del_date = st.selectbox("Устгах огноо сонгох:", sorted(history.keys(), reverse=True))
