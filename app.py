@@ -144,8 +144,10 @@ with tab1:
                 df_tool = df_tool.loc[:, ~df_tool.columns.duplicated()]
                 
                 cols = df_tool.columns.tolist()
+                
+                # 'unnamed' гэсэн үгнээс сэргийлж баганыг найдвартай хайх
                 c_code = [c for c in cols if '№' in c or 'код' in c or 'code' in c][0]
-                c_name = [c for c in cols if 'бүтээгдэхүүн' in c or 'нэр' in c or 'name' in c][0]
+                c_name = [c for c in cols if ('бүтээгдэхүүн' in c or 'нэр' in c or 'name' in c) and 'unnamed' not in c][0]
                 c_morn = [c for c in cols if 'өглөө' in c][0]
                 c_delv = [c for c in cols if 'хүргэлт' in c][0] if [c for c in cols if 'хүргэлт' in c] else None
                 c_even = [c for c in cols if 'орой' in c][0] if [c for c in cols if 'орой' in c] else None
@@ -196,7 +198,7 @@ with tab1:
                     })
                     
                 st.session_state['temp_report'] = report_list
-                st.success("✅ Тулгалт амжилттай хийгдлээ!")
+                st.success(f"✅ Тулгалт амжилттай хийгдлээ! (Нийт {len(report_list)} бараа)")
                 
             except Exception as e:
                 st.error(f"Файл уншихад алдаа гарлаа: {e}")
