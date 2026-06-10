@@ -28,10 +28,9 @@ def clean_numeric(val):
     except:
         return 0
 
-# Шинэ хувилбарт зориулсан 100% аюулгүй өнгө будагч функц
 def safe_style_dataframe(df):
     def highlight_diff(row):
-        val = row["Зөрүү (Илүү/Дутуу)"]
+        val = row.get("Зөрүү (Илүү/Дутуу)", 0)
         color = ""
         if val < 0:
             color = "background-color: #ffcccc; color: black;"
@@ -40,7 +39,9 @@ def safe_style_dataframe(df):
         
         styles = [""] * len(row)
         # Зөрүү багана нь манай хүснэгтийн 7 дахь багана (0-ээс тоолбол 7)
-        styles[7] = color
+        if "Зөрүү (Илүү/Дутуу)" in df.columns:
+            diff_col_idx = df.columns.get_loc("Зөрүү (Илүү/Дутуу)")
+            styles[diff_col_idx] = color
         return styles
     
     return df.style.apply(highlight_diff, axis=1)
@@ -58,13 +59,18 @@ with tab1:
     
     history = load_json(HISTORY_FILE)
     
-    c1, c2, c3 = st.columns([1, 1.2, 1.2])
-    with c1:
+    c_date, c_staff1, c_staff2 = st.columns(3)
+    with c_date:
         date_str = st.date_input("Тооллого хийх огноо:", datetime.now()).strftime("%Y-%m-%d")
-        staff_name = st.text_input("👨‍🍳 ПОС ажилтан:", placeholder="Жишээ нь: Болд")
-    with c2:
+    with c_staff1:
+        staff_m = st.text_input("🌅 Өглөөний ээлж (M):", placeholder="Жишээ нь: Болд")
+    with c_staff2:
+        staff_c = st.text_input("🌃 Оройн ээлж (C):", placeholder="Жишээ нь: Бат")
+
+    c_file1, c_file2 = st.columns(2)
+    with c_file1:
         pos_excel = st.file_uploader("📂 1. ПОС-ын Excel (5.22i.xlsx мэт)", type=['xlsx', 'csv'])
-    with c3:
+    with c_file2:
         toollogo_excel = st.file_uploader("📋 2. Тооллогын Excel (2026.5.22.xlsx мэт)", type=['xlsx', 'csv'])
 
     st.write("---")
@@ -75,14 +81,12 @@ with tab1:
     
     if latest_date:
         st.info(f"💡 Өмнөх өдрийн ({latest_date}) архиваас оройн үлдэгдлийг автоматаар татаж, өнөөдрийн 'Өглөө'-ний тоог баталгаажуулна.")
-        for item in history[latest_date]:
+        for item in history[latest_date].get('items', []):
             prev_evening_dict[str(item["Код"])] = item["Орой"]
-    else:
-        st.warning("⚠️ Өмнөх өдрийн архив олдсонгүй. Тооллогын файл дээрх 'Өглөө'-ний дүнгээр бодогдоно.")
 
     if st.button("📊 ХОЁР ФАЙЛЫГ ТУЛГАЖ ШАЛГАХ", type="primary"):
-        if not staff_name:
-            st.error("Ажилтны нэрийг заавал оруулна уу!")
+        if not staff_m or not staff_c:
+            st.error("⚠️ Өглөө болон оройн ээлжийн ажилтны нэрийг заавал оруулна уу!")
         elif not pos_excel or not toollogo_excel:
             st.error("⚠️ ПОС-ын болон Тооллогын 2 файлыг ХОЁУЛАГ НЬ оруулна уу!")
         else:
@@ -145,7 +149,6 @@ with tab1:
                 
                 cols = df_tool.columns.tolist()
                 
-                # 'unnamed' гэсэн үгнээс сэргийлж баганыг найдвартай хайх
                 c_code = [c for c in cols if '№' in c or 'код' in c or 'code' in c][0]
                 c_name = [c for c in cols if ('бүтээгдэхүүн' in c or 'нэр' in c or 'name' in c) and 'unnamed' not in c][0]
                 c_morn = [c for c in cols if 'өглөө' in c][0]
@@ -193,11 +196,14 @@ with tab1:
                         "Бодит борлуулалт": int(act_sold),
                         "Систем борлуулалт": int(sys_v),
                         "Зөрүү (Илүү/Дутуу)": int(diff),
-                        "ПОС Ажилтан": staff_name,
                         "Тайлбар": comment_val
                     })
                     
-                st.session_state['temp_report'] = report_list
+                st.session_state['temp_report'] = {
+                    "staff_m": staff_m,
+                    "staff_c": staff_c,
+                    "items": report_list
+                }
                 st.success(f"✅ Тулгалт амжилттай хийгдлээ! (Нийт {len(report_list)} бараа)")
                 
             except Exception as e:
@@ -206,14 +212,18 @@ with tab1:
     if 'temp_report' in st.session_state:
         st.divider()
         st.subheader(f"🔍 ТУЛГАЛТЫН ДҮН ({date_str})")
-        res_df = pd.DataFrame(st.session_state['temp_report'])
         
-        # Шинэ аюулгүй аргаар хүснэгтийг харуулах
+        report_data = st.session_state['temp_report']
+        res_df = pd.DataFrame(report_data["items"])
+        
         styled_df = safe_style_dataframe(res_df).format(precision=0)
         st.dataframe(styled_df, use_container_width=True)
         
+        # Хүснэгтийн доор ажилчдын мэдээллийг харуулах
+        st.markdown(f"**Ээлжийн ажилчид:** 🌅 Өглөө (M): `{report_data['staff_m']}` | 🌃 Орой (C): `{report_data['staff_c']}`")
+        
         if st.button("🏁 ЭНЭ ӨДРИЙГ АРХИВТ ХАДГАЛАХ", type="primary"):
-            history[date_str] = st.session_state['temp_report']
+            history[date_str] = report_data
             save_json(history, HISTORY_FILE)
             del st.session_state['temp_report']
             st.balloons()
@@ -235,30 +245,48 @@ with tab2:
         end_str = end_date.strftime("%Y-%m-%d")
         
         all_recs = []
-        for d, items in history.items():
+        for d, day_data in history.items():
             if start_str <= d <= end_str:
+                # Хуучин хувилбарын архив (жагсаалт) байвал алгасахгүй зохицуулах
+                if isinstance(day_data, list):
+                    items = day_data
+                    staff_m_val = items[0].get("ПОС Ажилтан", "Тодорхойгүй") if items else "Тодорхойгүй"
+                    staff_c_val = staff_m_val
+                else:
+                    items = day_data.get("items", [])
+                    staff_m_val = day_data.get("staff_m", "Тодорхойгүй")
+                    staff_c_val = day_data.get("staff_c", "Тодорхойгүй")
+
                 for i in items:
-                    i['Огноо'] = d
-                    all_recs.append(i)
+                    # Дэлгэрэнгүй тайланд зориулж мэдээллээ нэмэх
+                    rec = i.copy()
+                    rec['Огноо'] = d
+                    rec['Өглөө (M)'] = staff_m_val
+                    rec['Орой (C)'] = staff_c_val
+                    if "ПОС Ажилтан" in rec:
+                        del rec["ПОС Ажилтан"]
+                    all_recs.append(rec)
                     
         if all_recs:
             df_all = pd.DataFrame(all_recs)
-            df_all = df_all[["Огноо", "ПОС Ажилтан", "Код", "Барааны нэр", "Өглөө", "Хүргэлт", "Орой", "Бодит борлуулалт", "Систем борлуулалт", "Зөрүү (Илүү/Дутуу)", "Тайлбар"]]
+            # Багануудын дарааллыг янзлах
+            cols_order = ["Огноо", "Өглөө (M)", "Орой (C)", "Код", "Барааны нэр", "Өглөө", "Хүргэлт", "Орой", "Бодит борлуулалт", "Систем борлуулалт", "Зөрүү (Илүү/Дутуу)", "Тайлбар"]
+            df_all = df_all[[c for c in cols_order if c in df_all.columns]]
             
             st.write(f"### 📅 {start_str} -аас {end_str} хүртэлх тайлан")
             
-            # Архивын хэсэгт мөн адил аюулгүй арга ашиглав
             styled_all_df = safe_style_dataframe(df_all).format(precision=0)
             st.dataframe(styled_all_df, use_container_width=True)
             
             st.divider()
-            st.subheader("💰 Ажилчдын суутгалын нэгтгэл (Зөвхөн дутсан)")
+            st.subheader("💰 Суутгалын нэгтгэл (Зөвхөн дутсан бараагаар)")
             
             dut_df = df_all[df_all["Зөрүү (Илүү/Дутуу)"] < 0].copy()
             if not dut_df.empty:
-                summary_df = dut_df.groupby(["ПОС Ажилтан", "Барааны нэр"])["Зөрүү (Илүү/Дутуу)"].sum().reset_index()
+                # Оройн ээлжийн хүн голчлон хариуцах тул "Орой (C)"-ээр бүлэглэе
+                summary_df = dut_df.groupby(["Орой (C)", "Барааны нэр"])["Зөрүү (Илүү/Дутуу)"].sum().reset_index()
                 summary_df["Зөрүү (Илүү/Дутуу)"] = summary_df["Зөрүү (Илүү/Дутуу)"].abs()
-                summary_df.columns = ["ПОС Ажилтан", "Дутсан бараа", "Нийт дутсан ширхэг"]
+                summary_df.columns = ["Хариуцагч (Оройн ээлж)", "Дутсан бараа", "Нийт дутсан ширхэг"]
                 st.table(summary_df)
             else:
                 st.info("🥳 Энэ хугацаанд ямар ч бараа дутаагүй байна!")
