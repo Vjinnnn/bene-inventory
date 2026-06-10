@@ -29,17 +29,23 @@ def clean_numeric(val):
         return 0
 
 def style_diff(val):
-    if val < 0: return 'background-color: #ffcccc; color: black'
-    if val > 0: return 'background-color: #ccffcc; color: black'
+    try:
+        val_num = float(val)
+        if val_num < 0: return 'background-color: #ffcccc; color: black'
+        if val_num > 0: return 'background-color: #ccffcc; color: black'
+    except:
+        pass
     return ''
 
-# Pandas-ийн шинэ хуучин хувилбарын алдаанаас хамгаалах функц
+# Pandas-ийн ямар ч хувилбарын (шинэ, хуучин) алдаанаас 100% хамгаалсан өнгө будагч
 def safe_style(df, subset_cols):
-    styler = df.style
-    if hasattr(styler, 'map'):
-        return styler.map(style_diff, subset=subset_cols)
-    else:
-        return styler.applymap(style_diff, subset=subset_cols)
+    def color_picker(data):
+        style_df = pd.DataFrame('', index=data.index, columns=data.columns)
+        for col in subset_cols:
+            if col in data.columns:
+                style_df[col] = data[col].apply(style_diff)
+        return style_df
+    return df.style.apply(color_picker, axis=None)
 
 st.set_page_config(page_title="Bene Inventory Pro", layout="wide")
 st.markdown("""<style>.stButton>button { width: 100%; height: 3em; border-radius: 10px; font-weight: bold; margin-top: 10px; }</style>""", unsafe_allow_html=True)
@@ -217,7 +223,7 @@ with tab1:
         st.subheader(f"🔍 ТУЛГАЛТЫН ДҮН ({date_str})")
         res_df = pd.DataFrame(st.session_state['temp_report'])
         
-        # Зассан хэсэг: аюулгүй өнгө будах функц ашиглав
+        # 100% аюулгүй өнгө будалт
         styled_df = safe_style(res_df, subset_cols=['Зөрүү (Илүү/Дутуу)']).format(precision=0)
         st.dataframe(styled_df, use_container_width=True)
         
@@ -256,7 +262,7 @@ with tab2:
             
             st.write(f"### 📅 {start_str} -аас {end_str} хүртэлх тайлан")
             
-            # Зассан хэсэг: аюулгүй өнгө будах функц ашиглав
+            # 100% аюулгүй өнгө будалт
             styled_all_df = safe_style(df_all, subset_cols=['Зөрүү (Илүү/Дутуу)']).format(precision=0)
             st.dataframe(styled_all_df, use_container_width=True)
             
