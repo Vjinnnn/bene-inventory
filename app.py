@@ -20,6 +20,10 @@ def save_json(data, filename):
 
 def clean_numeric(val):
     try:
+        # Хэрвээ давхардсан утга (Series) орж ирвэл зөвхөн эхнийхийг нь авна
+        if isinstance(val, pd.Series):
+            val = val.iloc[0]
+            
         if pd.isna(val) or val == "":
             return 0
         return int(float(str(val).replace(',', '').replace(' ', '')))
@@ -73,7 +77,7 @@ with tab1:
             st.error("⚠️ ПОС-ын болон Тооллогын 2 файлыг ХОЁУЛАГ НЬ оруулна уу!")
         else:
             try:
-                # Файлыг санах ойд тогтвортойгоор уншиж авах (Хамгийн чухал засвар энд байна)
+                # Файлыг санах ойд тогтвортойгоор уншиж авах
                 pos_bytes = pos_excel.getvalue()
                 tool_bytes = toollogo_excel.getvalue()
 
@@ -98,6 +102,9 @@ with tab1:
                     df_pos = pd.read_excel(io.BytesIO(pos_bytes), skiprows=h_idx_pos)
                 
                 df_pos.columns = df_pos.columns.str.strip()
+                # Давхардсан багануудыг цэвэрлэх
+                df_pos = df_pos.loc[:, ~df_pos.columns.duplicated()]
+                
                 df_pos['Item #'] = df_pos['Item #'].astype(str).str.replace(r'\.0$', '', regex=True)
                 df_pos['Qty Sold'] = pd.to_numeric(df_pos['Qty Sold'], errors='coerce').fillna(0)
                 sys_sales = df_pos.groupby('Item #')['Qty Sold'].sum().to_dict()
@@ -131,9 +138,12 @@ with tab1:
                     st.stop()
                     
                 df_tool.columns = df_tool.columns.astype(str).str.strip().str.lower()
+                
+                # --- ХАМГИЙН ЧУХАЛ ЗАСВАР: ДАВХАРДСАН БАГАНУУДЫГ УСТГАХ ---
+                df_tool = df_tool.loc[:, ~df_tool.columns.duplicated()]
+                
                 cols = df_tool.columns.tolist()
                 
-                # Багануудыг ухаалгаар олох
                 c_code_list = [c for c in cols if '№' in c or 'код' in c or 'code' in c]
                 c_code = c_code_list[0] if c_code_list else (cols[1] if len(cols) > 1 else cols[0])
 
@@ -162,8 +172,14 @@ with tab1:
                 # ---------------------------------------------------------
                 report_list = []
                 for _, row in df_tool.iterrows():
-                    code = str(row[c_code]).replace('.0', '').strip()
-                    name = str(row[c_name]).strip()
+                    # Давхардсан утгатай бол сэргийлэх нэмэлт
+                    raw_code = row[c_code]
+                    raw_name = row[c_name]
+                    if isinstance(raw_code, pd.Series): raw_code = raw_code.iloc[0]
+                    if isinstance(raw_name, pd.Series): raw_name = raw_name.iloc[0]
+                        
+                    code = str(raw_code).replace('.0', '').strip()
+                    name = str(raw_name).strip()
                     
                     if not code or code == 'nan' or name == 'nan' or name == '':
                         continue
@@ -171,7 +187,10 @@ with tab1:
                     morn_val = clean_numeric(row[c_morn])
                     delv_val = clean_numeric(row[c_delv]) if c_delv else 0
                     even_val = clean_numeric(row[c_even]) if c_even else 0
-                    comment_val = str(row[c_comm]) if c_comm and not pd.isna(row[c_comm]) else ""
+                    
+                    raw_comm = row[c_comm] if c_comm else ""
+                    if isinstance(raw_comm, pd.Series): raw_comm = raw_comm.iloc[0]
+                    comment_val = str(raw_comm) if not pd.isna(raw_comm) and str(raw_comm) != "nan" else ""
 
                     if latest_date and code in prev_evening_dict:
                         morn_val = prev_evening_dict[code]
