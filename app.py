@@ -28,24 +28,22 @@ def clean_numeric(val):
     except:
         return 0
 
-def style_diff(val):
-    try:
-        val_num = float(val)
-        if val_num < 0: return 'background-color: #ffcccc; color: black'
-        if val_num > 0: return 'background-color: #ccffcc; color: black'
-    except:
-        pass
-    return ''
-
-# Pandas-ийн ямар ч хувилбарын (шинэ, хуучин) алдаанаас 100% хамгаалсан өнгө будагч
-def safe_style(df, subset_cols):
-    def color_picker(data):
-        style_df = pd.DataFrame('', index=data.index, columns=data.columns)
-        for col in subset_cols:
-            if col in data.columns:
-                style_df[col] = data[col].apply(style_diff)
-        return style_df
-    return df.style.apply(color_picker, axis=None)
+# Шинэ хувилбарт зориулсан 100% аюулгүй өнгө будагч функц
+def safe_style_dataframe(df):
+    def highlight_diff(row):
+        val = row["Зөрүү (Илүү/Дутуу)"]
+        color = ""
+        if val < 0:
+            color = "background-color: #ffcccc; color: black;"
+        elif val > 0:
+            color = "background-color: #ccffcc; color: black;"
+        
+        styles = [""] * len(row)
+        # Зөрүү багана нь манай хүснэгтийн 7 дахь багана (0-ээс тоолбол 7)
+        styles[7] = color
+        return styles
+    
+    return df.style.apply(highlight_diff, axis=1)
 
 st.set_page_config(page_title="Bene Inventory Pro", layout="wide")
 st.markdown("""<style>.stButton>button { width: 100%; height: 3em; border-radius: 10px; font-weight: bold; margin-top: 10px; }</style>""", unsafe_allow_html=True)
@@ -53,7 +51,7 @@ st.markdown("""<style>.stButton>button { width: 100%; height: 3em; border-radius
 tab1, tab2 = st.tabs(["📝 2 ФАЙЛ ТУЛГАХ", "📊 САРЫН АРХИВ / ТАЙЛАН"])
 
 # =====================================================================
-# TAB 1: ТООЛЛОГО ХЭСЭГ (ФАЙЛ ОРУУЛАХ)
+# TAB 1: ТООЛЛОГО ХЭСЭГ
 # =====================================================================
 with tab1:
     st.subheader("📝 Өдрийн тооллого - Автомат тулгалт")
@@ -139,34 +137,19 @@ with tab1:
                             break
 
                 if df_tool is None:
-                    st.error("⚠️ Тооллогын файлаас 'Өглөө' болон 'Орой' гэсэн багануудтай хүснэгт олдсонгүй.")
+                    st.error("⚠️ 'Өглөө' болон 'Орой' баганатай мөр олдсонгүй.")
                     st.stop()
                     
                 df_tool.columns = df_tool.columns.astype(str).str.strip().str.lower()
                 df_tool = df_tool.loc[:, ~df_tool.columns.duplicated()]
                 
                 cols = df_tool.columns.tolist()
-                
-                c_code_list = [c for c in cols if '№' in c or 'код' in c or 'code' in c]
-                c_code = c_code_list[0] if c_code_list else (cols[1] if len(cols) > 1 else cols[0])
-
-                c_name_list = [c for c in cols if 'бүтээгдэхүүн' in c or 'нэр' in c or 'name' in c]
-                c_name = c_name_list[0] if c_name_list else (cols[2] if len(cols) > 2 else cols[1])
-
-                c_morn_list = [c for c in cols if 'өглөө' in c]
-                if not c_morn_list:
-                    st.error("⚠️ 'Өглөө' гэсэн багана олдсонгүй.")
-                    st.stop()
-                c_morn = c_morn_list[0]
-                
-                c_delv_list = [c for c in cols if 'хүргэлт' in c]
-                c_delv = c_delv_list[0] if c_delv_list else None
-                
-                c_even_list = [c for c in cols if 'орой' in c]
-                c_even = c_even_list[0] if c_even_list else None
-                
-                c_comm_list = [c for c in cols if 'тайлбар' in c]
-                c_comm = c_comm_list[0] if c_comm_list else None
+                c_code = [c for c in cols if '№' in c or 'код' in c or 'code' in c][0]
+                c_name = [c for c in cols if 'бүтээгдэхүүн' in c or 'нэр' in c or 'name' in c][0]
+                c_morn = [c for c in cols if 'өглөө' in c][0]
+                c_delv = [c for c in cols if 'хүргэлт' in c][0] if [c for c in cols if 'хүргэлт' in c] else None
+                c_even = [c for c in cols if 'орой' in c][0] if [c for c in cols if 'орой' in c] else None
+                c_comm = [c for c in cols if 'тайлбар' in c][0] if [c for c in cols if 'тайлбар' in c] else None
 
                 df_tool = df_tool.dropna(subset=[c_code, c_name])
 
@@ -181,7 +164,7 @@ with tab1:
                     code = str(raw_code).replace('.0', '').strip()
                     name = str(raw_name).strip()
                     
-                    if not code or code == 'nan' or name == 'nan' or name == '':
+                    if not code or code in ['nan', ''] or name in ['nan', '']:
                         continue
                         
                     morn_val = clean_numeric(row[c_morn])
@@ -213,7 +196,7 @@ with tab1:
                     })
                     
                 st.session_state['temp_report'] = report_list
-                st.success("✅ Амжилттай тулгалаа! Доошоо гүйлгэж харна уу.")
+                st.success("✅ Тулгалт амжилттай хийгдлээ!")
                 
             except Exception as e:
                 st.error(f"Файл уншихад алдаа гарлаа: {e}")
@@ -223,8 +206,8 @@ with tab1:
         st.subheader(f"🔍 ТУЛГАЛТЫН ДҮН ({date_str})")
         res_df = pd.DataFrame(st.session_state['temp_report'])
         
-        # 100% аюулгүй өнгө будалт
-        styled_df = safe_style(res_df, subset_cols=['Зөрүү (Илүү/Дутуу)']).format(precision=0)
+        # Шинэ аюулгүй аргаар хүснэгтийг харуулах
+        styled_df = safe_style_dataframe(res_df).format(precision=0)
         st.dataframe(styled_df, use_container_width=True)
         
         if st.button("🏁 ЭНЭ ӨДРИЙГ АРХИВТ ХАДГАЛАХ", type="primary"):
@@ -262,11 +245,10 @@ with tab2:
             
             st.write(f"### 📅 {start_str} -аас {end_str} хүртэлх тайлан")
             
-            # 100% аюулгүй өнгө будалт
-            styled_all_df = safe_style(df_all, subset_cols=['Зөрүү (Илүү/Дутуу)']).format(precision=0)
+            # Архивын хэсэгт мөн адил аюулгүй арга ашиглав
+            styled_all_df = safe_style_dataframe(df_all).format(precision=0)
             st.dataframe(styled_all_df, use_container_width=True)
             
-            # --- СУУТГАЛЫН НЭГТГЭЛ ---
             st.divider()
             st.subheader("💰 Ажилчдын суутгалын нэгтгэл (Зөвхөн дутсан)")
             
@@ -297,4 +279,4 @@ with tab2:
         else:
             st.warning("📅 Сонгосон хугацаанд архив олдсонгүй.")
     else:
-        st.info("Архив одоогоор хоосон байна. Тооллого хийж архивт хадгалаарай.")
+        st.info("Архив одоогоор хоосон байна.")
