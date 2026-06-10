@@ -7,26 +7,6 @@ from datetime import datetime
 
 # --- ТОХИРГОО Ба ФАЙЛУУД ---
 HISTORY_FILE = "inventory_history.json"
-CURRENT_FILE = "inventory_current.json"
-
-# Танай бодит Excel-ээс авсан барааны жагсаалт (Код: Нэр)
-# '0' кодтой байсан бараануудын жинхэнэ ПОС кодыг нь олж солиорой!
-BARAANI_JAGSAALT = {
-    "10": "Gift card 10k",
-    "20": "Gift card 20k",
-    "30": "Gift card 30k",
-    "127": "Lactose free milk",
-    "391": "Цэнхэр ус",
-    "2": "Ягаан ус",
-    "731": "Creamcheese",
-    "929": "PORORO/ EDDY/RUBY CANDY",
-    "1195": "Fonte dripbag",
-    "1198": "MD coffee bean 250gr",
-    "0001": "Milk (Кодыг засах)",
-    "0002": "Аяга (Кодыг засах)",
-    "0003": "Лаа 8000 (Кодыг засах)",
-    "0004": "Coffee bean 1kg (Кодыг засах)"
-}
 
 def load_json(filename):
     if os.path.exists(filename):
@@ -38,10 +18,11 @@ def save_json(data, filename):
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-def calculate_input(text):
+def clean_numeric(val):
     try:
-        if not text: return 0
-        return sum(map(int, str(text).replace('+', ' ').split()))
+        if pd.isna(val) or val == "":
+            return 0
+        return int(float(str(val).replace(',', '').replace(' ', '')))
     except:
         return 0
 
@@ -51,148 +32,162 @@ def style_diff(val):
     return ''
 
 st.set_page_config(page_title="Bene Inventory Pro", layout="wide")
-st.markdown("""<style>.stButton>button { width: 100%; height: 3em; border-radius: 10px; font-weight: bold; margin-top: 10px; } .item-label { font-size: 14px; font-weight: bold; margin-bottom: -15px; }</style>""", unsafe_allow_html=True)
+st.markdown("""<style>.stButton>button { width: 100%; height: 3em; border-radius: 10px; font-weight: bold; margin-top: 10px; }</style>""", unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["📝 ӨДРИЙН ТООЛЛОГО", "📊 САРЫН АРХИВ / ТАЙЛАН"])
+tab1, tab2 = st.tabs(["📝 2 ФАЙЛ ТУЛГАХ", "📊 САРЫН АРХИВ / ТАЙЛАН"])
 
 # =====================================================================
-# TAB 1: ТООЛЛОГО ХЭСЭГ
+# TAB 1: ТООЛЛОГО ХЭСЭГ (ФАЙЛ ОРУУЛАХ)
 # =====================================================================
 with tab1:
-    st.subheader("📝 Өдрийн тооллого ба Тулгалт")
+    st.subheader("📝 Өдрийн тооллого - Автомат тулгалт")
     
     history = load_json(HISTORY_FILE)
     
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col1:
+    # Дээд талын мэдээлэл оруулах хэсэг
+    c1, c2, c3 = st.columns([1, 1.2, 1.2])
+    with c1:
         date_str = st.date_input("Тооллого хийх огноо:", datetime.now()).strftime("%Y-%m-%d")
-    with col2:
-        excel_file = st.file_uploader("📂 Посын Excel (5.22i.xlsx мэт)", type=['xlsx'])
-    with col3:
-        staff_name = st.text_input("👨‍🍳 ПОС дээр суусан ажилтан:", placeholder="Жишээ нь: Болд")
+        staff_name = st.text_input("👨‍🍳 ПОС ажилтан:", placeholder="Жишээ нь: Болд")
+    with c2:
+        pos_excel = st.file_uploader("📂 1. ПОС-ын Excel (5.22i.xlsx мэт)", type=['xlsx', 'csv'])
+    with c3:
+        toollogo_excel = st.file_uploader("📋 2. Тооллогын Excel (toollogo.csv мэт)", type=['xlsx', 'csv'])
 
     st.write("---")
     
-    # Өмнөх өдрийн оройны үлдэгдлийг олох
+    # 3-р дүрэм: Өмнөх өдрийн оройны үлдэгдлийг олж бэлдэх
     past_dates = [d for d in history.keys() if d < date_str]
     latest_date = max(past_dates) if past_dates else None
+    prev_evening_dict = {}
     
     if latest_date:
-        st.info(f"💡 Өглөөний үлдэгдлийг өмнөх өдрийн ({latest_date}) оройн тооцооноос автоматаар татаж түгжлээ.")
+        st.info(f"💡 Өмнөх өдрийн ({latest_date}) архиваас оройн үлдэгдлийг автоматаар татаж, өнөөдрийн 'Өглөө'-ний тоог баталгаажуулна.")
+        for item in history[latest_date]:
+            prev_evening_dict[str(item["Код"])] = item["Орой"]
     else:
-        st.warning("⚠️ Өмнөх өдрийн архив олдсонгүй. Өглөөний үлдэгдлийг гараар оруулах боломжтой.")
+        st.warning("⚠️ Өмнөх өдрийн архив олдсонгүй. Тооллогын файл дээрх 'Өглөө'-ний дүнгээр бодогдоно.")
 
-    current_data = {}
-    saved_current = load_json(CURRENT_FILE)
-    
-    h = st.columns([2, 0.7, 0.7, 0.7, 1.5])
-    h[0].caption("Барааны код ба нэр")
-    h[1].caption("Өглөө")
-    h[2].caption("Хүргэлт")
-    h[3].caption("Орой")
-    h[4].caption("Тайлбар")
+    if st.button("📊 ХОЁР ФАЙЛЫГ ТУЛГАЖ ШАЛГАХ", type="primary"):
+        if not staff_name:
+            st.error("Ажилтны нэрийг заавал оруулна уу!")
+        elif not pos_excel or not toollogo_excel:
+            st.error("⚠️ ПОС-ын болон Тооллогын 2 файлыг ХОЁУЛАГ НЬ оруулна уу!")
+        else:
+            try:
+                # ---------------------------------------------------------
+                # 1. ПОС-ЫН ФАЙЛЫГ УНШИХ
+                # ---------------------------------------------------------
+                if pos_excel.name.endswith('.csv'):
+                    df_pos_raw = pd.read_csv(pos_excel, header=None)
+                else:
+                    df_pos_raw = pd.read_excel(pos_excel, header=None)
+                
+                # 'Item #' гэсэн толгойг олох
+                h_idx_pos = 0
+                for i, row in df_pos_raw.iterrows():
+                    if 'Item #' in str(row.values) or 'Item Name' in str(row.values):
+                        h_idx_pos = i
+                        break
+                
+                if pos_excel.name.endswith('.csv'):
+                    df_pos = pd.read_csv(pos_excel, skiprows=h_idx_pos)
+                else:
+                    df_pos = pd.read_excel(pos_excel, skiprows=h_idx_pos)
+                
+                df_pos.columns = df_pos.columns.str.strip()
+                df_pos['Item #'] = df_pos['Item #'].astype(str).str.replace(r'\.0$', '', regex=True)
+                df_pos['Qty Sold'] = pd.to_numeric(df_pos['Qty Sold'], errors='coerce').fillna(0)
+                sys_sales = df_pos.groupby('Item #')['Qty Sold'].sum().to_dict()
 
-    for code, name in BARAANI_JAGSAALT.items():
-        u_val = ""
-        is_disabled = False
-        
-        # 3-р дүрэм: Өчигдрийн орой = Өнөөдрийн өглөө (Түгжих)
-        if latest_date:
-            prev_item = next((item for item in history[latest_date] if item["Код"] == code), None)
-            if prev_item:
-                u_val = str(prev_item["Орой"])
-                is_disabled = True
-        
-        if not is_disabled:
-            u_val = saved_current.get(code, {}).get("u", "")
-            
-        prev_h = saved_current.get(code, {}).get("h", "")
-        prev_o = saved_current.get(code, {}).get("o", "")
-        prev_c = saved_current.get(code, {}).get("comm", "")
+                # ---------------------------------------------------------
+                # 2. ТООЛЛОГЫН ФАЙЛЫГ УНШИХ
+                # ---------------------------------------------------------
+                if toollogo_excel.name.endswith('.csv'):
+                    df_tool_raw = pd.read_csv(toollogo_excel, header=None)
+                else:
+                    df_tool_raw = pd.read_excel(toollogo_excel, header=None)
+                
+                # 'Бүтээгдэхүүний нэр' эсвэл 'Өглөө' гэсэн толгойг олох
+                h_idx_tool = 0
+                for i, row in df_tool_raw.iterrows():
+                    if 'Бүтээгдэхүүний нэр' in str(row.values) or 'Өглөө' in str(row.values):
+                        h_idx_tool = i
+                        break
+                
+                if toollogo_excel.name.endswith('.csv'):
+                    df_tool = pd.read_csv(toollogo_excel, skiprows=h_idx_tool)
+                else:
+                    df_tool = pd.read_excel(toollogo_excel, skiprows=h_idx_tool)
+                    
+                df_tool.columns = df_tool.columns.astype(str).str.strip()
+                
+                # Баганын нэрсийг таньж авах
+                c_code = [c for c in df_tool.columns if '№' in c or 'Код' in c][0]
+                c_name = [c for c in df_tool.columns if 'Бүтээгдэхүүний нэр' in c or 'нэр' in c.lower()][0]
+                c_morn = [c for c in df_tool.columns if 'Өглөө' in c][0]
+                c_delv = [c for c in df_tool.columns if 'Хүргэлт' in c][0]
+                c_even = [c for c in df_tool.columns if 'Орой' in c][0]
+                c_comm = [c for c in df_tool.columns if 'Тайлбар' in c]
+                c_comm = c_comm[0] if c_comm else None
 
-        cols = st.columns([2, 0.7, 0.7, 0.7, 1.5])
-        cols[0].markdown(f"<p class='item-label'><b>[{code}]</b> {name}</p>", unsafe_allow_html=True)
-        
-        u = cols[1].text_input("Ө", value=u_val, key=f"u_{code}", disabled=is_disabled, label_visibility="collapsed")
-        h = cols[2].text_input("Х", value=prev_h, key=f"h_{code}", label_visibility="collapsed")
-        o = cols[3].text_input("О", value=prev_o, key=f"o_{code}", label_visibility="collapsed")
-        comm = cols[4].text_input("Т", value=prev_c, key=f"c_{code}", label_visibility="collapsed", placeholder="...")
-        
-        current_data[code] = {"u": u, "h": h, "o": o, "comm": comm}
+                # Хоосон мөрүүдийг устгах
+                df_tool = df_tool.dropna(subset=[c_code, c_name])
 
-    st.markdown("---")
-    b1, b2 = st.columns(2)
-    with b1:
-        if st.button("💾 Явцыг түр хадгалах"):
-            save_json(current_data, CURRENT_FILE)
-            st.toast("Явц хадгалагдлаа")
-            
-    with b2:
-        if st.button("📊 Системтэй тулгаж шалгах", type="primary"):
-            if not staff_name:
-                st.error("Ажилтны нэрийг заавал оруулна уу!")
-            elif excel_file:
-                try:
-                    # Excel-ийг бүтнээр нь уншаад 'Item #' гэсэн толгойг автоматаар хайж олох
-                    df_raw = pd.read_excel(excel_file, header=None)
-                    header_idx = 0
-                    for i, row in df_raw.iterrows():
-                        if 'Item #' in str(row.values):
-                            header_idx = i
-                            break
+                # ---------------------------------------------------------
+                # 3. ТУЛГАЛТ ХИЙХ
+                # ---------------------------------------------------------
+                report_list = []
+                for _, row in df_tool.iterrows():
+                    code = str(row[c_code]).replace('.0', '').strip()
+                    name = str(row[c_name]).strip()
                     
-                    # Зөв толгойноос эхэлж дахин унших
-                    df = pd.read_excel(excel_file, skiprows=header_idx)
-                    df.columns = df.columns.str.strip()
-                    
-                    # 'Item #' баганыг текст болгож, Qty Sold баганаас хоосон биш утгуудыг авна
-                    df['Item #'] = df['Item #'].astype(str).str.replace(r'\.0$', '', regex=True)
-                    df['Qty Sold'] = pd.to_numeric(df['Qty Sold'], errors='coerce').fillna(0)
-                    
-                    # Барааны кодоор нь зарсан тоог нэгтгэх
-                    sys_sales = df.groupby('Item #')['Qty Sold'].sum().to_dict()
-                    
-                    report_list = []
-                    for code, v in current_data.items():
-                        u_v = calculate_input(v['u'])
-                        h_v = calculate_input(v['h'])
-                        o_v = calculate_input(v['o'])
+                    if not code or code == 'nan':
+                        continue
                         
-                        # Кодоор хайж зарсан тоог олох (Байхгүй бол 0)
-                        sys_v = sys_sales.get(str(code), 0)
-                        
-                        act_sold = (u_v + h_v) - o_v
-                        diff = act_sold - sys_v
-                        
-                        report_list.append({
-                            "Код": code,
-                            "Барааны нэр": name,
-                            "Өглөө": u_v,
-                            "Хүргэлт": h_v,
-                            "Орой": o_v,
-                            "Бодит борлуулалт": int(act_sold),
-                            "Систем борлуулалт": int(sys_v),
-                            "Зөрүү (Илүү/Дутуу)": int(diff),
-                            "ПОС Ажилтан": staff_name,
-                            "Тайлбар": v['comm']
-                        })
-                    st.session_state['temp_report'] = report_list
-                    st.success("Амжилттай! Доошоо гүйлгэж харна уу.")
-                except Exception as e:
-                    st.error(f"Excel уншихад алдаа гарлаа. Файлын загвар зөв эсэхийг шалгана уу. Алдаа: {e}")
-            else:
-                st.warning("⚠️ Посын Excel файлаа оруулна уу!")
+                    # Хүснэгтээс уншсан тоо
+                    morn_val = clean_numeric(row[c_morn])
+                    delv_val = clean_numeric(row[c_delv])
+                    even_val = clean_numeric(row[c_even])
+                    comment_val = str(row[c_comm]) if c_comm and not pd.isna(row[c_comm]) else ""
+
+                    # ЗАРЧИМ: Өчигдрийн орой = Өнөөдрийн өглөө (Хэрэв архивт байвал автоматаар дарж бичнэ)
+                    if latest_date and code in prev_evening_dict:
+                        morn_val = prev_evening_dict[code]
+
+                    # Систем борлуулалт ба Бодит борлуулалт
+                    sys_v = sys_sales.get(code, 0)
+                    act_sold = (morn_val + delv_val) - even_val
+                    diff = act_sold - sys_v
+                    
+                    report_list.append({
+                        "Код": code,
+                        "Барааны нэр": name,
+                        "Өглөө": morn_val,
+                        "Хүргэлт": delv_val,
+                        "Орой": even_val,
+                        "Бодит борлуулалт": int(act_sold),
+                        "Систем борлуулалт": int(sys_v),
+                        "Зөрүү (Илүү/Дутуу)": int(diff),
+                        "ПОС Ажилтан": staff_name,
+                        "Тайлбар": comment_val
+                    })
+                    
+                st.session_state['temp_report'] = report_list
+                st.success("✅ Амжилттай тулгалаа! Доошоо гүйлгэж харна уу.")
+                
+            except Exception as e:
+                st.error(f"Файл уншихад алдаа гарлаа. Файлын загвараа шалгана уу! Алдаа: {e}")
 
     if 'temp_report' in st.session_state:
         st.divider()
-        st.subheader(f"🔍 Тулгалтын дүн ({date_str})")
+        st.subheader(f"🔍 ТУЛГАЛТЫН ДҮН ({date_str})")
         res_df = pd.DataFrame(st.session_state['temp_report'])
         st.dataframe(res_df.style.applymap(style_diff, subset=['Зөрүү (Илүү/Дутуу)']).format(precision=0), use_container_width=True)
         
         if st.button("🏁 ЭНЭ ӨДРИЙГ АРХИВТ ХАДГАЛАХ", type="primary"):
             history[date_str] = st.session_state['temp_report']
             save_json(history, HISTORY_FILE)
-            if os.path.exists(CURRENT_FILE): os.remove(CURRENT_FILE)
             del st.session_state['temp_report']
             st.balloons()
             st.rerun()
@@ -247,5 +242,16 @@ with tab2:
                     summary_df.to_excel(writer, sheet_name="Суутгалын хуудас", index=False)
                     
             st.download_button("📥 EXCEL ТАЙЛАН ТАТАХ", buffer.getvalue(), f"Tailan_{start_str}_{end_str}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            
+            # Устгах хэсэг
+            st.write("---")
+            with st.expander("🗑️ Хуучин архив устгах"):
+                del_date = st.selectbox("Устгах огноо сонгох:", sorted(history.keys(), reverse=True))
+                if st.button("❌ Архиваас бүрмөсөн устгах"):
+                    del history[del_date]
+                    save_json(history, HISTORY_FILE)
+                    st.rerun()
         else:
             st.warning("📅 Сонгосон хугацаанд архив олдсонгүй.")
+    else:
+        st.info("Архив одоогоор хоосон байна. Тооллого хийж архивт хадгалаарай.")
