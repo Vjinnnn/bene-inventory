@@ -44,7 +44,6 @@ with tab1:
     
     history = load_json(HISTORY_FILE)
     
-    # Дээд талын мэдээлэл оруулах хэсэг
     c1, c2, c3 = st.columns([1, 1.2, 1.2])
     with c1:
         date_str = st.date_input("Тооллого хийх огноо:", datetime.now()).strftime("%Y-%m-%d")
@@ -84,8 +83,8 @@ with tab1:
                 
                 h_idx_pos = 0
                 for i, row in df_pos_raw.iterrows():
-                    row_text = " ".join([str(x) for x in row.values if pd.notna(x)])
-                    if 'Item #' in row_text or 'Item Name' in row_text:
+                    row_text = " ".join([str(x).lower() for x in row.values if pd.notna(x)])
+                    if 'item #' in row_text and 'qty sold' in row_text:
                         h_idx_pos = i
                         break
                 
@@ -100,56 +99,52 @@ with tab1:
                 sys_sales = df_pos.groupby('Item #')['Qty Sold'].sum().to_dict()
 
                 # ---------------------------------------------------------
-                # 2. ТООЛЛОГЫН ФАЙЛЫГ УНШИХ (БҮХ SHEET-ИЙГ ШАЛГАХ)
+                # 2. ТООЛЛОГЫН ФАЙЛЫГ УНШИХ (БҮХ SHEET, НИЙЛМЭЛ ХАЙЛТ)
                 # ---------------------------------------------------------
-                h_idx_tool = -1
                 df_tool = None
                 
                 if toollogo_excel.name.endswith('.csv'):
                     df_tool_raw = pd.read_csv(toollogo_excel, header=None)
                     for i, row in df_tool_raw.iterrows():
-                        row_text = " ".join([str(x) for x in row.values if pd.notna(x)])
-                        if 'Бүтээгдэхүүн' in row_text or 'Өглөө' in row_text:
-                            h_idx_tool = i
+                        row_text = " ".join([str(x).lower() for x in row.values if pd.notna(x)])
+                        # "Өглөө" болон "Орой" зэрэгцэн оршиж байвал жинхэнэ толгой мөр гэж үзнэ
+                        if 'өглөө' in row_text and 'орой' in row_text:
+                            df_tool = pd.read_csv(toollogo_excel, skiprows=i)
                             break
-                    if h_idx_tool != -1:
-                        df_tool = pd.read_csv(toollogo_excel, skiprows=h_idx_tool)
                 else:
-                    # Excel байвал бүх хуудас (sheet)-рүү орж хайна
                     xls = pd.ExcelFile(toollogo_excel)
                     for sheet_name in xls.sheet_names:
                         temp_df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
                         for i, row in temp_df.iterrows():
-                            row_text = " ".join([str(x) for x in row.values if pd.notna(x)])
-                            if 'Бүтээгдэхүүн' in row_text or 'Өглөө' in row_text:
-                                h_idx_tool = i
-                                df_tool = pd.read_excel(xls, sheet_name=sheet_name, skiprows=h_idx_tool)
+                            row_text = " ".join([str(x).lower() for x in row.values if pd.notna(x)])
+                            if 'өглөө' in row_text and 'орой' in row_text:
+                                df_tool = pd.read_excel(xls, sheet_name=sheet_name, skiprows=i)
                                 break
                         if df_tool is not None:
                             break
 
                 if df_tool is None:
-                    st.error("⚠️ Тооллогын файлаас 'Бүтээгдэхүүний нэр' эсвэл 'Өглөө' гэсэн үгтэй толгой олдсонгүй.")
+                    st.error("⚠️ Тооллогын файлаас 'Өглөө' болон 'Орой' гэсэн багануудтай хүснэгт олдсонгүй.")
                     st.stop()
                     
-                df_tool.columns = df_tool.columns.astype(str).str.strip()
+                # Багануудын нэрийг жижиг үсэгт шилжүүлж алдаа гаргах магадлалыг 0 болгов
+                df_tool.columns = df_tool.columns.astype(str).str.strip().str.lower()
                 
-                # Багануудыг аюулгүй байдлаар хайж олох
                 try:
-                    c_code = [c for c in df_tool.columns if '№' in c or 'Код' in c][0]
-                    c_name = [c for c in df_tool.columns if 'Бүтээгдэхүүн' in c or 'нэр' in c.lower()][0]
-                    c_morn = [c for c in df_tool.columns if 'Өглөө' in c][0]
+                    c_code = [c for c in df_tool.columns if '№' in c or 'код' in c][0]
+                    c_name = [c for c in df_tool.columns if 'бүтээгдэхүүн' in c or 'нэр' in c][0]
+                    c_morn = [c for c in df_tool.columns if 'өглөө' in c][0]
                     
-                    c_delv_list = [c for c in df_tool.columns if 'Хүргэлт' in c]
+                    c_delv_list = [c for c in df_tool.columns if 'хүргэлт' in c]
                     c_delv = c_delv_list[0] if c_delv_list else None
                     
-                    c_even_list = [c for c in df_tool.columns if 'Орой' in c]
+                    c_even_list = [c for c in df_tool.columns if 'орой' in c]
                     c_even = c_even_list[0] if c_even_list else None
                     
-                    c_comm_list = [c for c in df_tool.columns if 'Тайлбар' in c]
+                    c_comm_list = [c for c in df_tool.columns if 'тайлбар' in c]
                     c_comm = c_comm_list[0] if c_comm_list else None
                 except IndexError:
-                    st.error("⚠️ Тооллогын хуудас олдсон хэдий ч '№', 'Бүтээгдэхүүний нэр', 'Өглөө' зэрэг багануудын аль нэг нь дутуу байна.")
+                    st.error("⚠️ Тооллогын хүснэгт олдсон боловч '№', 'Бүтээгдэхүүний нэр', 'Өглөө' зэрэг багануудын аль нэг нь дутуу байна.")
                     st.stop()
 
                 df_tool = df_tool.dropna(subset=[c_code, c_name])
@@ -179,7 +174,7 @@ with tab1:
                     
                     report_list.append({
                         "Код": code,
-                        "Барааны нэр": name,
+                        "Барааны нэр": name.title(),
                         "Өглөө": morn_val,
                         "Хүргэлт": delv_val,
                         "Орой": even_val,
