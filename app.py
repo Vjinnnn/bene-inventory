@@ -107,7 +107,6 @@ with tab1:
                     df_tool_raw = pd.read_csv(toollogo_excel, header=None)
                     for i, row in df_tool_raw.iterrows():
                         row_text = " ".join([str(x).lower() for x in row.values if pd.notna(x)])
-                        # "Өглөө" болон "Орой" зэрэгцэн оршиж байвал жинхэнэ толгой мөр гэж үзнэ
                         if 'өглөө' in row_text and 'орой' in row_text:
                             df_tool = pd.read_csv(toollogo_excel, skiprows=i)
                             break
@@ -127,25 +126,43 @@ with tab1:
                     st.error("⚠️ Тооллогын файлаас 'Өглөө' болон 'Орой' гэсэн багануудтай хүснэгт олдсонгүй.")
                     st.stop()
                     
-                # Багануудын нэрийг жижиг үсэгт шилжүүлж алдаа гаргах магадлалыг 0 болгов
                 df_tool.columns = df_tool.columns.astype(str).str.strip().str.lower()
+                cols = df_tool.columns.tolist()
                 
-                try:
-                    c_code = [c for c in df_tool.columns if '№' in c or 'код' in c][0]
-                    c_name = [c for c in df_tool.columns if 'бүтээгдэхүүн' in c or 'нэр' in c][0]
-                    c_morn = [c for c in df_tool.columns if 'өглөө' in c][0]
-                    
-                    c_delv_list = [c for c in df_tool.columns if 'хүргэлт' in c]
-                    c_delv = c_delv_list[0] if c_delv_list else None
-                    
-                    c_even_list = [c for c in df_tool.columns if 'орой' in c]
-                    c_even = c_even_list[0] if c_even_list else None
-                    
-                    c_comm_list = [c for c in df_tool.columns if 'тайлбар' in c]
-                    c_comm = c_comm_list[0] if c_comm_list else None
-                except IndexError:
-                    st.error("⚠️ Тооллогын хүснэгт олдсон боловч '№', 'Бүтээгдэхүүний нэр', 'Өглөө' зэрэг багануудын аль нэг нь дутуу байна.")
+                # --- БАГАНА ОЛОХ ХЭСГИЙГ АСУУДАЛГҮЙ БОЛГОЛОО ---
+                # 1. КОД / №
+                c_code_list = [c for c in cols if '№' in c or 'код' in c or 'code' in c]
+                if c_code_list:
+                    c_code = c_code_list[0]
+                else:
+                    # Олдохгүй бол хамгийн эхний баганыг (Index 0) эсвэл 2 дахь баганыг аваад үзье
+                    # Учир нь Excel-ийн эхний багана хоосон байх нь элбэг (Unnamed: 0)
+                    c_code = cols[1] if len(cols) > 1 else cols[0]
+
+                # 2. БАРААНЫ НЭР
+                c_name_list = [c for c in cols if 'бүтээгдэхүүн' in c or 'нэр' in c or 'name' in c]
+                if c_name_list:
+                    c_name = c_name_list[0]
+                else:
+                    # Олдохгүй бол 2 эсвэл 3 дахь баганыг авъя
+                    c_name = cols[2] if len(cols) > 2 else cols[1]
+
+                # 3. ӨГЛӨӨ
+                c_morn_list = [c for c in cols if 'өглөө' in c]
+                if not c_morn_list:
+                    st.error("⚠️ 'Өглөө' гэсэн багана олдсонгүй.")
                     st.stop()
+                c_morn = c_morn_list[0]
+                
+                # Бусад нэмэлт баганууд (байвал авна, байхгүй бол хамаагүй)
+                c_delv_list = [c for c in cols if 'хүргэлт' in c]
+                c_delv = c_delv_list[0] if c_delv_list else None
+                
+                c_even_list = [c for c in cols if 'орой' in c]
+                c_even = c_even_list[0] if c_even_list else None
+                
+                c_comm_list = [c for c in cols if 'тайлбар' in c]
+                c_comm = c_comm_list[0] if c_comm_list else None
 
                 df_tool = df_tool.dropna(subset=[c_code, c_name])
 
@@ -157,7 +174,8 @@ with tab1:
                     code = str(row[c_code]).replace('.0', '').strip()
                     name = str(row[c_name]).strip()
                     
-                    if not code or code == 'nan' or name == 'nan':
+                    # Хэрэв код юм уу нэр нь nan эсвэл хоосон байвал алгасна
+                    if not code or code == 'nan' or name == 'nan' or name == '':
                         continue
                         
                     morn_val = clean_numeric(row[c_morn])
@@ -189,7 +207,7 @@ with tab1:
                 st.success("✅ Амжилттай тулгалаа! Доошоо гүйлгэж харна уу.")
                 
             except Exception as e:
-                st.error(f"Файл уншихад алдаа гарлаа: {e}")
+                st.error(f"Файл уншихад алдаа гарлаа: Тооллогын хуудасны багана танигдсангүй. ({e})")
 
     if 'temp_report' in st.session_state:
         st.divider()
