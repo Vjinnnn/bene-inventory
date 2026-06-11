@@ -31,13 +31,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ЖИШЭЭ БАРААНЫ ҮНЭ (Та энд өөрийн барааны өртөг эсвэл зарах үнийг тавьчихвал суутгалыг шууд Төгрөгөөр бодно)
+# ЖИШЭЭ БАРААНЫ ҮНЭ (Суутгалыг шууд Төгрөгөөр бодох жагсаалт)
 PRICE_LIST = {
     "панини": 8500,
     "сэндвич": 7500,
     "бялуу": 6500,
     "cake": 6500,
-    "default": 5000  # Жагсаалтад байхгүй бол дундаж үнэ 5000-аар бодно
+    "default": 5000  
 }
 
 def get_item_price(item_name):
@@ -175,9 +175,9 @@ with tab1:
     
     col_upload1, col_upload2 = st.columns(2)
     with col_upload1:
-        uploaded_pos_files = st.file_uploader("📂 1. ПОС-ын сарын бүх файлууд (Олноор сонгох):", type=['xlsx', 'csv'], accept_multiple_files=True, key="pos_pmax")
+        uploaded_pos_files = st.file_uploader("📂 1. ПОС-ын сарын бүх файлууд (Олноор сонгох):", type=['xlsx', 'csv'], accept_multiple_files=True, key="pos_final")
     with col_upload2:
-        uploaded_tool_files = st.file_uploader("📋 2. ТООЛЛОГЫН сарын бүх файлууд (Олноор сонгох):", type=['xlsx', 'csv'], accept_multiple_files=True, key="tool_pmax")
+        uploaded_tool_files = st.file_uploader("📋 2. ТООЛЛОГЫН сарын бүх файлууд (Олноор сонгох):", type=['xlsx', 'csv'], accept_multiple_files=True, key="tool_final")
     
     if st.button("⚡ БУТНИЙН САРААР НЬ АВТОМАТ ТУЛГАЖ Сканнердах"):
         if not uploaded_pos_files or not uploaded_tool_files:
@@ -223,11 +223,10 @@ with tab2:
     else:
         dates_available = sorted(list(history.keys()))
         
-        # Ухаалаг шүүлтүүрүүд (Баруун, зүүн хажуугийн удирдлага)
         st.markdown("<div class='report-title'>🔍 Нарийвчилсан Шүүлтүүрүүд</div>", unsafe_allow_html=True)
         col_f1, col_f2, col_f3, col_f4 = st.columns(4)
         with col_f1: start_d = st.date_input("Эхлэх огноо:", datetime.strptime(dates_available[0], "%Y-%m-%d"))
-        with col_e_col := col_f2: end_d = st.date_input("Дуусах огноо:", datetime.strptime(dates_available[-1], "%Y-%m-%d"))
+        with col_f2: end_d = st.date_input("Дуусах огноо:", datetime.strptime(dates_available[-1], "%Y-%m-%d"))
         
         all_rows = []
         for d, day_data in history.items():
@@ -242,18 +241,16 @@ with tab2:
         if all_rows:
             df_master = pd.DataFrame(all_rows)
             
-            # Ангилал болон хайлтаар шүүх хэсэг
             with col_f3: selected_group = st.selectbox("Барааны бүлэг шүүх:", ["БҮГД"] + list(df_master['Барааны бүлэг'].unique()))
             with col_f4: search_query = st.text_input("Барааны нэр / Кодоор хайх:", "")
             
             if selected_group != "БҮГД": df_master = df_master[df_master['Барааны бүлэг'] == selected_group]
             if search_query: df_master = df_master[df_master['Барааны нэр'].str.contains(search_query, case=False) | df_master['Код'].str.contains(search_query)]
             
-            # --- 📈 ӨНГӨТ KPI КАРТУУД (ХУРААНГУЙ) ---
+            # --- 📈 ӨНГӨТ KPI КАРТУУД ---
             total_shortage = df_master[df_master['Зөрүү (Илүү/Дутуу)'] < 0]['Зөрүү (Илүү/Дутуу)'].sum()
             total_counting_errors = df_master[df_master['Тооллогын Алдаа Тоо'] != 0]['Огноо'].count()
             
-            # Суутгал төгрөгөөр бодох
             total_loss_mnt = 0
             for _, row in df_master[df_master['Зөрүү (Илүү/Дутуу)'] < 0].iterrows():
                 total_loss_mnt += abs(row['Зөрүү (Илүү/Дутуу)']) * get_item_price(row['Барааны нэр'])
@@ -271,7 +268,6 @@ with tab2:
                 show_cols1 = ["Огноо", "Код", "Барааны нэр", "Өглөөний үлдэгдэл", "Хүргэлт авсан", "Оройн үлдэгдэл", "Бодит борлуулалт", "Систем борлуулалт", "Зөрүү (Илүү/Дутуу)", "Аудит Тайлбар"]
                 st.dataframe(df_discrepancy[show_cols1].style.apply(style_discrepancy, axis=1), use_container_width=True)
                 
-                # Excel файл экспортлох
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     df_discrepancy[show_cols1].to_excel(writer, sheet_name="Суутгалын хуудас", index=False)
