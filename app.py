@@ -48,23 +48,19 @@ def extract_date_from_filename(filename):
     match_short = re.search(r'(\d{1,2})[-.](\d{1,2})', filename)
     if match_short:
         month, day = int(match_short.group(1)), int(match_short.group(2))
-        if month in [1,2,3,4,5,6,7,8,9,10,11,12]: return f"2026-{month:02d}-{day:02d}"
+        return f"2026-{month:02d}-{day:02d}"
     return None
 
-# --- ХҮСНЭГТИЙН МӨРӨНД ӨНГӨ ОРУУЛАХ ФУНКЦ ---
 def highlight_rows(row):
-    # Зөрүү (Илүү/Дутуу) багана дээр суурилж өнгө тавина
     val = row['Зөрүү (Илүү/Дутуу)']
-    if val < 0:
-        return ['background-color: #fee2e2; color: #991b1b'] * len(row) # Дутагдал = Улаан фоноор ялгана
-    elif val > 0:
-        return ['background-color: #fef3c7; color: #92400e'] * len(row) # Илүү гарсан = Шар фоноор ялгана
+    if val < 0: return ['background-color: #fee2e2; color: #991b1b'] * len(row)
+    elif val > 0: return ['background-color: #fef3c7; color: #92400e'] * len(row)
     return [''] * len(row)
 
-# --- ҮНДСЭН БОДОЛТЫН ЛОГИК ---
+# Үндсэн бодолтын логик
 def process_single_day(pos_bytes, tool_bytes, is_pos_csv, is_tool_csv, prev_evening_dict):
     try:
-        # 1. ПОС файл унших
+        # ПОС унших
         df_pos = pd.read_csv(io.BytesIO(pos_bytes), skiprows=0) if is_pos_csv else pd.read_excel(io.BytesIO(pos_bytes), skiprows=0)
         h_idx_pos = 0
         for i, row in df_pos.iterrows():
@@ -76,7 +72,7 @@ def process_single_day(pos_bytes, tool_bytes, is_pos_csv, is_tool_csv, prev_even
         df_pos['Item #'] = df_pos['Item #'].astype(str).str.replace(r'\.0$', '', regex=True)
         sys_sales = df_pos.groupby('Item #')['Qty Sold'].sum().to_dict()
 
-        # 2. Тооллогын файл унших
+        # Тооллого унших
         df_tool = None
         xls = pd.ExcelFile(io.BytesIO(tool_bytes))
         for sheet_name in xls.sheet_names:
@@ -110,7 +106,6 @@ def process_single_day(pos_bytes, tool_bytes, is_pos_csv, is_tool_csv, prev_even
             even_val = clean_numeric(row[c_even]) if c_even else 0
             comment_val = str(row[c_comm]).strip() if c_comm and not pd.isna(row[c_comm]) else ""
 
-            # 🌟 ӨГЛӨӨ, ОРОЙН ТООЛЛОГЫН ЗӨРҮҮГ ОЛЖ ЯЛГАХ
             counting_error_qty = 0
             counting_comment = ""
             if code in prev_evening_dict:
@@ -123,12 +118,9 @@ def process_single_day(pos_bytes, tool_bytes, is_pos_csv, is_tool_csv, prev_even
             act_sold = (morn_val + delv_val) - even_val
             diff = act_sold - sys_v
             
-            # Суутгалын тайлбар үүсгэх
             audit_comment = comment_val
-            if diff < 0:
-                audit_comment = f"🚨 Суутгана! {abs(diff)} ш дутсан. " + audit_comment
-            elif diff > 0:
-                audit_comment = f"📈 Илүү гарсан {diff} ш. " + audit_comment
+            if diff < 0: audit_comment = f"🚨 Суутгана! {abs(diff)} ш дутсан. " + audit_comment
+            elif diff > 0: audit_comment = f"📈 Илүү гарсан {diff} ш. " + audit_comment
 
             report_list.append({
                 "Код": code,
@@ -144,63 +136,71 @@ def process_single_day(pos_bytes, tool_bytes, is_pos_csv, is_tool_csv, prev_even
                 "Тооллогын Алдаа Тоо": counting_error_qty
             })
         return report_list
-    except Exception as e:
-        return None
+    except: return None
 
-# --- СТРИМЛИТ ТАВУУД ---
+# --- ТАВУУД ---
 tab1, tab2 = st.tabs(["📥 САРЫН ФАЙЛУУД ОРУУЛАХ", "📊 УХААЛАГ АУДИТЫН ХЯНАЛТЫН ЦОНХ"])
 
 with tab1:
-    st.markdown("### 📅 Сарын бүх ПОС болон Тооллогын файлыг бөөнд нь уншуулах")
-    st.info("💡 Та энэ хэсэгт тухайн сарын бүх өдрийн ПОС-ын Excel болон Тооллогын Excel файлуудыг цугт нь идэвхжүүлээд чирч оруулж болно. Систем огноогоор нь автоматаар хослуулж өдөр өдрөөр нь тулгана.")
+    st.markdown("### 📅 Сарын бүх ПОС болон Тооллогын файлыг тусад нь оруулах")
+    st.info("💡 ПОС-оос татсан сарын бүх файлаа зүүн талд, Ажилчдын бөглөсөн тооллогын сарын бүх файлаа баруун талд оруулна уу. Систем огноогоор нь автоматаар тулгана.")
     
-    uploaded_files = st.file_uploader("Файлуудаа сонгоно уу:", type=['xlsx', 'csv'], accept_multiple_files=True)
+    col_upload1, col_upload2 = st.columns(2)
+    with col_upload1:
+        uploaded_pos_files = st.file_uploader("📂 1. ПОС-ын файлууд (Олноор сонгох):", type=['xlsx', 'csv'], accept_multiple_files=True)
+    with col_upload2:
+        uploaded_tool_files = st.file_uploader("📋 2. ТООЛЛОГЫН файлууд (Олноор сонгох):", type=['xlsx', 'csv'], accept_multiple_files=True)
     
-    if st.button("⚡ БУТНИЙН САРААР НЬ АВТОМАТ ТУЛГАХ"):
-        if uploaded_files:
-            pos_files, tool_files = {}, {}
-            for f in uploaded_files:
-                f_date = extract_date_from_filename(f.name)
-                if f_date:
-                    if any(x in f.name.lower() for x in ['summary', 'pos', 'i.xlsx', 'i.csv']): 
-                        pos_files[f_date] = f
-                    else: 
-                        tool_files[f_date] = f
+    if st.button("⚡ БУТНИЙН САРААР НЬ АВТОМАТ ТУЛГАХ", type="primary"):
+        if not uploaded_pos_files or not uploaded_tool_files:
+            st.error("🚨 Анхаар: ПОС болон Тооллогын файлын хайрцаг хоёулаа файлтай байх ёстой!")
+        else:
+            pos_files_dict = {}
+            tool_files_dict = {}
             
-            common_dates = sorted(list(set(pos_files.keys()).intersection(set(tool_files.keys()))))
+            for f in uploaded_pos_files:
+                f_date = extract_date_from_filename(f.name)
+                if f_date: pos_files_dict[f_date] = f
+                    
+            for f in uploaded_tool_files:
+                f_date = extract_date_from_filename(f.name)
+                if f_date: tool_files_dict[f_date] = f
+            
+            common_dates = sorted(list(set(pos_files_dict.keys()).intersection(set(tool_files_dict.keys()))))
             
             if not common_dates:
-                st.error("❌ Файлын нэрнээс тохирох огноо олдсонгүй эсвэл ПОС болон Тооллогын хос өдрүүд таарахгүй байна! (Жишээ нэр: '2026-05-10_pos.xlsx', '2026-05-10_toollogo.xlsx')")
+                st.error("❌ Алдаа: Хоёр хайрцагт байгаа файлуудаас ижил огноотой хослол олдсонгүй! Файлын нэр дээр огноо байгаа эсэхийг шалгана уу.")
             else:
-                history = {} # Шинээр бүх сарыг цэвэр бодно
+                history = {}
                 running_prev_evening = {}
                 
                 progress_bar = st.progress(0)
                 for index, d_str in enumerate(common_dates):
+                    pos_f = pos_files_dict[d_str]
+                    tool_f = tool_files_dict[d_str]
+                    
                     res_items = process_single_day(
-                        pos_files[d_str].getvalue(), 
-                        tool_files[d_str].getvalue(), 
-                        pos_files[d_str].name.endswith('.csv'), 
-                        tool_files[d_str].name.endswith('.csv'), 
+                        pos_f.getvalue(), 
+                        tool_f.getvalue(), 
+                        pos_f.name.endswith('.csv'), 
+                        tool_f.name.endswith('.csv'), 
                         running_prev_evening
                     )
                     if res_items:
                         history[d_str] = {"items": res_items}
-                        # Маргааш өдрийн өглөөний тулгалтад зориулж өнөөдрийн оройн тоог хадгална
                         running_prev_evening = {str(i["Код"]): i["Орой"] for i in res_items}
                     progress_bar.progress((index + 1) / len(common_dates))
                 
                 save_json(history)
-                st.success(f"🎉 Сарын нийт {len(common_dates)} өдрийн файлыг амжилттай уншиж, суутгал болон тооллогын зөрүүг бодож дууслаа! Одоо 'УХААЛАГ АУДИТЫН ХЯНАЛТЫН ЦОНХ' тав руу орж үзнэ үү.")
+                st.success(f"🎉 Амжилттай! Сарын нийт {len(common_dates)} өдрийн файлыг тус тусад нь уншиж дууслаа. Одоо 'УХААЛАГ АУДИТЫН ХЯНАЛТЫН ЦОНХ' руу орно уу.")
 
 with tab2:
     st.markdown("### 📊 Анализ болон Ухаалаг хяналтын самбар")
     history = load_json()
     
     if not history:
-        st.warning("📋 Одоогоор системд хадгалагдсан өгөгдөл алга. Эхлээд 'САРЫН ФАЙЛУУД ОРУУЛАХ' хэсэгт файлаа уншуулна уу.")
+        st.warning("📋 Одоогоор системд хадгалагдсан өгөгдөл алга. Эхлээд файлаа уншуулна уу.")
     else:
-        # Огноо шүүлтүүр
         dates_available = sorted(list(history.keys()))
         col_s, col_e = st.columns(2)
         with col_s: start_d = st.date_input("Эхлэх огноо:", datetime.strptime(dates_available[0], "%Y-%m-%d") if dates_available else datetime.now())
@@ -219,39 +219,23 @@ with tab2:
         if all_rows:
             df_master = pd.DataFrame(all_rows)
             
-            # -------------------------------------------------------------
-            # ТАЙЛАН 1: СУУТГАЛ БА ЗӨРҮҮНИЙ ТАЙЛАН (ПОС болон Тооллого зөрсөн)
-            # -------------------------------------------------------------
+            # ТАЙЛАН 1: СУУТГАЛ
             st.markdown("<div class='report-title'>🚨 1. БОРЛУУЛАЛТЫН ЗӨРҮҮ БА СУУТГАЛЫН ХУУДАС</div>", unsafe_allow_html=True)
-            st.write("ПОС борлуулалт болон Бодит борлуулалт хоорондоо зөрж, **Дутагдал (Улаан)** эсвэл **Илүү (Шар)** гарсан бараануудыг шүүж харуулж байна. Эндээс шууд суутгалыг тооцно.")
-            
             df_discrepancy = df_master[df_master['Зөрүү (Илүү/Дутуу)'] != 0].copy()
-            
             if not df_discrepancy.empty:
-                # Өнгөөр ялгасан хүснэгтийг харуулах
                 styled_df = df_discrepancy[["Огноо", "Код", "Барааны нэр", "Өглөө", "Хүргэлт", "Орой", "Бодит борлуулалт", "Систем борлуулалт", "Зөрүү (Илүү/Дутуу)", "Аудит Тайлбар"]]\
                     .style.apply(highlight_rows, axis=1)
                 st.dataframe(styled_df, use_container_width=True)
-            else:
-                st.success("🥳 Сонгосон хугацаанд ПОС болон Тооллого зөрсөн ямар нэгэн дутагдал, суутгал алга байна!")
+            else: st.success("🥳 Зөрүүтэй суутгал алга байна!")
 
-            # -------------------------------------------------------------
-            # ТАЙЛАН 2: ТООЛЛОГЫН АЛДААНЫ АУДИТ (Өглөө, орой зөрсөн)
-            # -------------------------------------------------------------
-            st.markdown("<div class='report-title'>🔍 2. ӨГЛӨӨ / ОРОЙН ТООЛЛОГЫН АЛДААНЫ АУДИТ (Хэн буруу тоолсон бэ?)</div>", unsafe_allow_html=True)
-            st.write("Өчигдөр оройн ээлжийн хааж тоолсон тоо маргааш өглөөний ээлжийн нээж тоолсон бодит тоотой **ЗӨРСӨН** тохиолдлууд. Өөрөөр хэлбэл, хэн хариуцлагагүй буруу тоолсныг эндээс шүүнэ.")
-            
+            # ТАЙЛАН 2: ТООЛЛОГЫН АЛДАА
+            st.markdown("<div class='report-title'>🔍 2. ӨГЛӨӨ / ОРОЙН ТООЛЛОГЫН АЛДААНЫ АУДИТ</div>", unsafe_allow_html=True)
             df_counting_errors = df_master[df_master['Тооллогын Алдаа Тоо'] != 0].copy()
-            
             if not df_counting_errors.empty:
-                st.warning("⚠️ Өчигдөр оройн ээлж барааг буруу (дутуу эсвэл илүү) тоолж шивсэн байна. Өглөөний ээлж бодитоор зөв тоолж залруулсан тул өдрийн тооцоолол зөв гарсан боловч, хуучин ээлжинд тооллогын сануулга өгөх үндэслэл болно.")
+                st.warning("⚠️ Өчигдөр оройн ээлж барааг буруу тоолж шивсэн байна. Өглөөний ээлж бодитоор зөв тоолж залруулсан тохиолдлууд:")
                 st.dataframe(df_counting_errors[["Огноо", "Код", "Барааны нэр", "Тооллогын Зөрүү Чиглэл"]], use_container_width=True)
-            else:
-                st.success("✨ Гайхалтай! Өмнөх оройн хаалтын тоо, маргааш өглөөний нээлтийн тоотой бүгд яг таг таарсан байна. Ажилчид маш хариуцлагатай тоолжээ.")
+            else: st.success("✨ Оройн хаалтын тоо, маргааш өглөөний нээлтийн тоотой бүгд яг таг таарсан байна.")
 
-            # -------------------------------------------------------------
-            # ТАЙЛАН 3: САРЫН НЭГДҮҮЛСЭН ЕРӨНХИЙ ТАЙЛАН
-            # -------------------------------------------------------------
+            # ТАЙЛАН 3: НЭГДҮҮЛСЭН ТАЙЛАН
             st.markdown("<div class='report-title'>📋 3. САРЫН НЭГДҮҮЛСЭН ДЭЛГЭРЭНГҮЙ ХӨДӨЛГӨӨН</div>", unsafe_allow_html=True)
-            st.write("Зөрүүтэй болон зөрүүгүй бүх бараа бүтээгдэхүүний сарын нэгдсэн хөдөлгөөний хүснэгт.")
             st.dataframe(df_master[["Огноо", "Барааны бүлэг", "Код", "Барааны нэр", "Өглөө", "Хүргэлт", "Орой", "Бодит борлуулалт", "Систем борлуулалт", "Зөрүү (Илүү/Дутуу)"]], use_container_width=True)
